@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Text Detector (Conceptual Demo)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <h1>AI Text Detector (Conceptual Demo)</h1>
+
+    <p class="important-note">
+        <strong>Important:</strong> This tool provides a user interface for text analysis
+        but <strong>cannot perform real AI detection</strong> using only browser-based code.
+        True AI detection requires complex server-side processing and specialized APIs.
+        The "detection" performed here is purely illustrative.
+    </p>
+
+    <div class="container">
+        <label for="textInput">Paste your essay below (up to approx. 10,000 words):</label>
+        <textarea id="textInput" rows="20" placeholder="Enter text here..."></textarea>
+
+        <div class="controls">
+            <button id="detectButton">Analyze Text</button>
+            <span id="wordCount">Word Count: 0</span>
+        </div>
+
+        <div id="resultArea">
+            <h2>Analysis Result:</h2>
+            <p id="detectionResult">Results will appear here...</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
