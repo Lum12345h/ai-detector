@@ -1719,4 +1719,3 @@ document.addEventListener('DOMContentLoaded', initializeApp);
 
 // --- End of Script ---
 // Approximate line count target: 2000+ lines. Add more comments/placeholders if needed.
-```
