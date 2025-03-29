@@ -1396,6 +1396,11 @@ async function analyzeText(text) {
  * Updates the character, word, sentence, and paragraph counts displayed in the UI.
  */
 function updateTextCounts() {
+    // Added checks to ensure DOMElements are available before accessing properties
+    if (!DOMElements.textInput || !DOMElements.charCountDisplay || !DOMElements.wordCountDisplay || !DOMElements.sentenceCountDisplay || !DOMElements.paragraphCountDisplay) {
+        console.warn("updateTextCounts: Required DOM elements not found.");
+        return;
+    }
     const text = DOMElements.textInput.value;
     const words = text.match(/\b\w+\b/g) || []; // Simple word count based on word boundaries
     const sentences = splitSentences(text); // Use sentence splitter
@@ -1407,6 +1412,7 @@ function updateTextCounts() {
     DOMElements.paragraphCountDisplay.textContent = `Paragraphs: ${paragraphs.length}`;
 }
 
+
 // Debounced version for input event
 const debouncedUpdateCounts = debounce(updateTextCounts, CONFIG.DEBOUNCE_DELAY_COUNT);
 
@@ -1415,6 +1421,14 @@ const debouncedUpdateCounts = debounce(updateTextCounts, CONFIG.DEBOUNCE_DELAY_C
  * @param {object} analysisData The result object from analyzeText().
  */
 function displayResults(analysisData) {
+    // Added checks for DOM elements
+    if (!DOMElements.resultsPlaceholder || !DOMElements.resultsContent || !DOMElements.detailedResultsContainer ||
+        !DOMElements.overallScoreValue || !DOMElements.overallScoreLabel || !DOMElements.overallInterpretation ||
+        !DOMElements.confidenceBar || !DOMElements.confidenceLabel) {
+        console.error("displayResults: Critical UI elements for results display are missing.");
+        return;
+    }
+
     // Hide placeholder, show results area
     DOMElements.resultsPlaceholder.style.display = 'none';
     DOMElements.resultsContent.style.display = 'block';
@@ -1529,8 +1543,10 @@ function displayResults(analysisData) {
              // Simple mapping for demo: ai leaning = high value, human leaning = low value
              valueSpan.classList.add(result.interpretation === 'ai' ? 'high' : 'low');
          }
-        valueSpan.textContent = typeof result.value === 'number' ? result.value : String(result.value); // Display value
+        // Check if value is a number before calling toFixed
+        valueSpan.textContent = typeof result.value === 'number' ? result.value.toFixed(3) : String(result.value); // Display value, format number
         itemDiv.appendChild(valueSpan);
+
 
         const scoreSpan = document.createElement('span');
         scoreSpan.className = 'heuristic-score';
@@ -1558,7 +1574,11 @@ function displayResults(analysisData) {
     });
 
      // Scroll to results smoothly
-     DOMElements.resultsContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+     // Check if element exists before scrolling
+     if (DOMElements.resultsContent && typeof DOMElements.resultsContent.scrollIntoView === 'function') {
+         DOMElements.resultsContent.scrollIntoView({ behavior: 'smooth', block: 'start' });
+     }
+
 
 }
 
@@ -1567,11 +1587,12 @@ function displayResults(analysisData) {
  */
 function showLoading() {
     if(DOMElements.loader) DOMElements.loader.style.display = 'inline-block';
-    if(DOMElements.analyzeButton) DOMElements.analyzeButton.disabled = true;
+    if(DOMElements.analyzeButton) {
+        DOMElements.analyzeButton.disabled = true;
+        DOMElements.analyzeButton.innerHTML = `<span class="button-icon">⏳</span> Analyzing...`;
+    }
     if(DOMElements.clearButton) DOMElements.clearButton.disabled = true;
     if(DOMElements.textInput) DOMElements.textInput.disabled = true; // Prevent editing during analysis
-     // Optionally update button text
-     if(DOMElements.analyzeButton) DOMElements.analyzeButton.innerHTML = `<span class="button-icon">⏳</span> Analyzing...`;
 }
 
 /**
@@ -1579,11 +1600,12 @@ function showLoading() {
  */
 function hideLoading() {
     if(DOMElements.loader) DOMElements.loader.style.display = 'none';
-     if(DOMElements.analyzeButton) DOMElements.analyzeButton.disabled = false;
+     if(DOMElements.analyzeButton) {
+         DOMElements.analyzeButton.disabled = false;
+         DOMElements.analyzeButton.innerHTML = `<span class="button-icon">▶</span> Analyze Text`;
+     }
      if(DOMElements.clearButton) DOMElements.clearButton.disabled = false;
      if(DOMElements.textInput) DOMElements.textInput.disabled = false;
-     // Restore button text
-      if(DOMElements.analyzeButton) DOMElements.analyzeButton.innerHTML = `<span class="button-icon">&#x25B6;</span> Analyze Text`;
 }
 
 /**
@@ -1606,10 +1628,13 @@ function clearInputAndResults() {
          DOMElements.overallScoreValue.className = 'score-value';
      }
      if(DOMElements.overallScoreLabel){
-         DOMElements.overallScoreLabel.textContent = 'Likely AI-Generated';
+         DOMElements.overallScoreLabel.textContent = 'Likely AI-Generated'; // Reset label text
          DOMElements.overallScoreLabel.className = 'score-label';
      }
-      if(DOMElements.overallInterpretation) DOMElements.overallInterpretation.textContent = 'Analysis results will appear here...';
+      if(DOMElements.overallInterpretation) {
+          // Reset interpretation text more reliably
+          DOMElements.overallInterpretation.innerHTML = 'Analysis results will appear here after you submit text. <br> The analysis checks for various linguistic patterns including: <ul class="feature-list"><li>Vocabulary Richness (Type-Token Ratio)</li><li>Sentence Length Variability</li><li>Repetitiveness (Words, Phrases)</li><li>Use of Transition Words</li><li>Presence of Personal Pronouns</li><li>Readability Scores</li><li>Use of Passive Voice</li><li>And many other subtle heuristic markers...</li></ul>';
+      }
      if(DOMElements.confidenceBar) DOMElements.confidenceBar.style.width = '0%';
      if(DOMElements.confidenceLabel) DOMElements.confidenceLabel.textContent = 'Confidence: Low';
      if(DOMElements.confidenceBar) DOMElements.confidenceBar.className = 'confidence-bar'; // Reset class
@@ -1627,6 +1652,12 @@ function clearInputAndResults() {
  * Handles the click event for the Analyze button.
  */
 async function handleAnalyzeClick() {
+    // Added check for DOMElements.textInput
+    if (!DOMElements.textInput) {
+        console.error("handleAnalyzeClick: textInput element not found.");
+        alert("Error: Cannot find text input area.");
+        return;
+    }
     const text = DOMElements.textInput.value;
     if (text.trim().length === 0) {
         alert("Please enter some text to analyze.");
@@ -1646,10 +1677,12 @@ async function handleAnalyzeClick() {
 
 
     showLoading();
-    // Hide results while processing
-    DOMElements.resultsContent.style.display = 'none';
-    DOMElements.resultsPlaceholder.style.display = 'block'; // Show placeholder again briefly
-    DOMElements.resultsPlaceholder.innerHTML = '<p>Analysis in progress...</p>'; // Update placeholder text
+    // Hide results while processing (check if elements exist)
+    if (DOMElements.resultsContent) DOMElements.resultsContent.style.display = 'none';
+    if (DOMElements.resultsPlaceholder) {
+        DOMElements.resultsPlaceholder.style.display = 'block'; // Show placeholder again briefly
+        DOMElements.resultsPlaceholder.innerHTML = '<p>Analysis in progress...</p>'; // Update placeholder text
+    }
 
 
     try {
@@ -1676,11 +1709,16 @@ async function handleAnalyzeClick() {
     } finally {
         hideLoading();
         // Restore placeholder text if results area is still hidden (e.g., on error before display)
-        if (DOMElements.resultsContent.style.display === 'none') {
-            DOMElements.resultsPlaceholder.innerHTML = '<p>Analysis results will appear here after you submit text.</p>'; // Restore default placeholder
+        if (DOMElements.resultsContent && DOMElements.resultsContent.style.display === 'none' && DOMElements.resultsPlaceholder) {
+             // More robust reset of placeholder content
+             DOMElements.resultsPlaceholder.innerHTML = '<p>Analysis results will appear here after you submit text.</p><p>The analysis checks for various linguistic patterns including:</p><ul class="feature-list"><li>Vocabulary Richness (TTR)</li><li>Sentence Length Variability</li><li>Repetitiveness (Words, Phrases)</li><li>Use of Transition Words</li><li>Presence of Personal Pronouns</li><li>Readability Scores</li><li>Use of Passive Voice</li><li>And many other subtle heuristic markers...</li></ul>';
         }
     }
-}
+} // *** THIS IS THE CORRECTED CLOSING BRACE for handleAnalyzeClick ***
+
+// -------------------------------------------------------------------------
+// --- Event Listeners and Initialization ---
+// -------------------------------------------------------------------------
 
 /**
  * Initializes the application: gets DOM elements and sets up event listeners.
@@ -1692,16 +1730,31 @@ function initializeApp() {
         return; // Stop initialization if elements are missing
     }
 
-    // Add event listeners
-    DOMElements.textInput.addEventListener('input', debouncedUpdateCounts);
-    DOMElements.analyzeButton.addEventListener('click', handleAnalyzeClick);
-    DOMElements.clearButton.addEventListener('click', clearInputAndResults);
+    // Add event listeners (Check if buttons exist before adding listeners)
+    if (DOMElements.textInput) {
+        DOMElements.textInput.addEventListener('input', debouncedUpdateCounts);
+    } else {
+        console.error("Initialization failed: textInput not found for listener.");
+    }
+
+    if (DOMElements.analyzeButton) {
+        DOMElements.analyzeButton.addEventListener('click', handleAnalyzeClick);
+    } else {
+        console.error("Initialization failed: analyzeButton not found for listener.");
+    }
+
+     if (DOMElements.clearButton) {
+        DOMElements.clearButton.addEventListener('click', clearInputAndResults);
+    } else {
+         console.error("Initialization failed: clearButton not found for listener.");
+     }
+
 
     // Initial setup
     updateTextCounts(); // Update counts on load (if there's initial text perhaps)
     hideLoading(); // Ensure loader is hidden initially
-    DOMElements.resultsContent.style.display = 'none'; // Ensure results are hidden
-    DOMElements.resultsPlaceholder.style.display = 'block'; // Ensure placeholder is shown
+    if (DOMElements.resultsContent) DOMElements.resultsContent.style.display = 'none'; // Ensure results are hidden
+    if (DOMElements.resultsPlaceholder) DOMElements.resultsPlaceholder.style.display = 'block'; // Ensure placeholder is shown
 
 
     console.log("Application Initialized Successfully.");
