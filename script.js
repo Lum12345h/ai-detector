@@ -1,7 +1,7 @@
 /**
  * =========================================================================
  * Advanced Heuristic AI Text Analyzer - Client-Side Script
- * Version: 1.0
+ * Version: 1.1 (Paragraph splitting improved)
  * Author: Generated Example Code
  * Date: 2023-10-27
  *
@@ -34,6 +34,7 @@ const CONFIG = {
     ANALYSIS_DELAY_SIMULATION: 500, // ms base delay to simulate processing
     PROGRESS_UPDATE_INTERVAL: 150, // ms interval for updating progress (visual only)
     RANDOMNESS_FACTOR: 0.05, // Small random factor to add slight variability to scores (0 to 1)
+    PARAGRAPH_LENGTH_SANITY_CHECK: 1000, // Avg words/para above which we suspect splitting failed
 
     // --- Heuristic Weights (CRITICAL: These are EXPERIMENTAL and ARBITRARY) ---
     // Weights determine how much each heuristic contributes to the final score.
@@ -43,8 +44,8 @@ const CONFIG = {
         // Vocabulary & Complexity
         ttr: 15.0,                   // Type-Token Ratio (Lower TTR -> Higher AI score) - Negative relationship needs inversion in calculation
         avgWordLength: -8.0,         // Average Word Length (Longer words -> Lower AI score)
-        fleschReadingEase: 10.0,    // Flesch Reading Ease (Easier -> Higher AI score) - Needs inversion
-        gunningFog: 12.0,           // Gunning Fog Index (Higher index -> Higher AI score)
+        fleschReadingEase: 10.0,    // Flesch Reading Ease (Easier -> Higher AI score) - Direct relationship
+        gunningFog: -12.0,           // Gunning Fog Index (Harder -> Lower AI score) - Inverted relationship // CHANGED WEIGHT SIGN TO MATCH INVERTED NORMALIZATION
 
         // Sentence Structure & Variety
         avgSentenceLength: 5.0,     // Average Sentence Length (Moderate effect)
@@ -76,7 +77,7 @@ const CONFIG = {
         simplifiedPerplexityProxy: 15.0,
 
         // Formatting & Structure (Less reliable)
-        avgParagraphLength: 2.0,    // Average Paragraph Length (Minor effect)
+        avgParagraphLength: 2.0,    // Average Paragraph Length (Minor effect, often unreliable due to splitting issues)
         listUsageScore: -3.0,        // Presence/frequency of lists (Slightly more human)
         quoteUsageScore: -4.0        // Presence/frequency of quotes (Slightly more human)
     },
@@ -90,7 +91,7 @@ const CONFIG = {
         gunningFog: { low: 10, high: 15 }, // Higher score = harder to read
         sentenceLengthVariance: { low: 5, high: 15 }, // Low variance might indicate AI
         wordRepetitionScore: { low: 0.02, high: 0.05 }, // Higher scores indicate more repetition
-        phraseRepetitionScore: { low: 0.01, high: 0.03 },
+        phraseRepetitionScore: { low: 0.01, high: 0.03 }, // This might still be too low based on previous results
         passiveVoiceRatio: { low: 0.05, high: 0.15 },
         personalPronounRatio: { low: 0.01, high: 0.04 }, // Higher ratio often human
         contractionRatio: { low: 0.005, high: 0.02 } // Higher ratio often human
@@ -322,15 +323,19 @@ function splitSentences(text) {
 
 
 /**
- * Splits text into paragraphs based on one or more newline characters.
+ * Splits text into paragraphs based on **two or more** newline characters.
+ * This is a more standard definition of paragraph breaks in plain text.
  * @param {string} text Input text.
  * @returns {string[]} Array of paragraphs.
  */
 function splitParagraphs(text) {
     if (!text) return [];
-    // Split by one or more newline characters, filter out empty strings resulting from multiple newlines
-    return text.split(/[\r\n]+/).map(p => p.trim()).filter(p => p.length > 0);
+    // Split by two or more newline characters (allowing for optional whitespace between them)
+    return text.split(/[\r\n]\s*[\r\n]+/) // Split on at least two newlines, potentially separated by whitespace
+               .map(p => p.trim())        // Trim whitespace from each resulting paragraph
+               .filter(p => p.length > 0); // Remove any empty paragraphs (like leading/trailing double newlines)
 }
+
 
 /**
  * Splits text into words. Uses aggressive cleaning first.
@@ -466,13 +471,13 @@ function anotherPlaceholderUtil(data){
 /**
  * Calculates Type-Token Ratio (TTR). A measure of lexical diversity.
  * TTR = (Number of unique words) / (Total number of words)
- * Lower TTR might indicate simpler vocabulary or repetition.
+ * Lower TTR might indicate simpler vocabulary or repetition (AI leaning).
  * @param {string[]} words Array of words (cleaned).
  * @returns {object} Heuristic result object.
  */
 function calculateTTR(words) {
     const name = "Vocabulary Richness (TTR)";
-    const description = "Type-Token Ratio (Unique Words / Total Words). Measures lexical diversity. Lower values might indicate simpler vocabulary often associated with some AI models.";
+    const description = "Type-Token Ratio (Unique Words / Total Words). Measures lexical diversity. Lower values (<~0.4) might indicate simpler vocabulary often associated with some AI models.";
     if (!words || words.length === 0) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -501,7 +506,7 @@ function calculateTTR(words) {
  */
 function calculateAvgWordLength(words) {
     const name = "Average Word Length";
-    const description = "Average length of words in the text. Very simplistic measure.";
+    const description = "Average length of words in the text. Longer words (>~5.5 chars) might lean slightly human, shorter (<~4.0) slightly AI.";
     if (!words || words.length === 0) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -525,7 +530,7 @@ function calculateAvgWordLength(words) {
  */
 function calculateAvgSentenceLength(sentences, totalWords) {
     const name = "Average Sentence Length";
-    const description = "Average number of words per sentence. Moderate lengths can be typical of AI.";
+    const description = "Average number of words per sentence. Moderate lengths (e.g., 15-25 words) can be typical of AI.";
     const numSentences = sentences.length;
     if (numSentences === 0 || totalWords === 0) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
@@ -534,7 +539,7 @@ function calculateAvgSentenceLength(sentences, totalWords) {
 
     // Normalize score (Direct: moderate length might be more AI-like - complex to model perfectly)
     // Let's assume very short and very long are more human. Peak AI score around 15-25 words?
-    // This requires a non-linear normalization, simplifying for now: slightly higher score for longer sentences.
+    // This requires a non-linear normalization, simplifying for now: slightly higher score for longer sentences within a range.
     // Example range: 10 to 30
     const score = normalizeScore(avgLength, 10, 30, false); // Invert = false (longer = higher AI score - simple model)
     const interpretation = 'neutral'; // Hard to interpret directly without better model
@@ -551,7 +556,7 @@ function calculateAvgSentenceLength(sentences, totalWords) {
  */
 function calculateSentenceLengthVariance(sentences) {
     const name = "Sentence Length Variance ('Burstiness')";
-    const description = "Standard deviation of sentence lengths (in words). Higher variance (more 'bursty') is often characteristic of human writing.";
+    const description = "Standard deviation of sentence lengths (in words). Higher variance (>~15) is often characteristic of human writing (more 'bursty'). Lower variance (<~5) may suggest AI.";
     if (!sentences || sentences.length < 2) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -570,22 +575,23 @@ function calculateSentenceLengthVariance(sentences) {
 /**
  * Calculates Paragraph Length Variance.
  * Similar to sentence variance, humans might vary paragraph length more.
- * @param {string[]} paragraphs Array of paragraphs.
+ * @param {string[]} paragraphs Array of paragraphs (split by double newlines).
  * @returns {object} Heuristic result object.
  */
 function calculateParagraphLengthVariance(paragraphs) {
     const name = "Paragraph Length Variance";
-    const description = "Standard deviation of paragraph lengths (in words). Higher variance may indicate human writing.";
+    const description = "Standard deviation of paragraph lengths (in words, using double newline splits). Higher variance may indicate human writing. Zero variance suggests failed splitting or uniform paragraphs.";
      if (!paragraphs || paragraphs.length < 2) {
+         // If only 0 or 1 paragraph found, variance is 0, which is neutral but uninformative
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
     const paragraphLengths = paragraphs.map(p => getWords(p).length);
     const variance = standardDeviation(paragraphLengths);
 
     // Normalize score (Inverted: higher variance -> lower AI score)
-    // Example range: 10 to 100 words std dev
+    // Example range: 10 to 100 words std dev. This is very approximate.
     const score = normalizeScore(variance, 10, 100, true); // Invert = true
-    const interpretation = 'neutral'; // Thresholds less defined here
+    const interpretation = (variance < 10 && paragraphs.length > 1) ? 'ai' : (variance > 100 ? 'human' : 'neutral'); // Basic interpretation based on range
 
     return { value: parseFloat(variance.toFixed(2)), name, description, score, interpretation };
 }
@@ -602,7 +608,7 @@ function calculateParagraphLengthVariance(paragraphs) {
  */
 function calculateFleschReadingEase(totalWords, totalSentences, totalSyllables) {
     const name = "Flesch Reading Ease";
-    const description = "Score indicating text readability (higher = easier). Easier text might sometimes correlate with AI output.";
+    const description = "Score indicating text readability (higher = easier). Very easy text (>~70) might sometimes correlate with simpler AI output; very difficult (<~50) often human.";
      if (totalWords === 0 || totalSentences === 0 || totalSyllables === 0) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -610,7 +616,7 @@ function calculateFleschReadingEase(totalWords, totalSentences, totalSyllables) 
     const avgSyllablesPerWord = totalSyllables / totalWords;
     const readingEase = 206.835 - (1.015 * avgSentenceLen) - (84.6 * avgSyllablesPerWord);
 
-    // Normalize score (Inverted: Higher reading ease -> higher AI score)
+    // Normalize score (Direct: Higher reading ease -> higher AI score)
     // Range: 0 (hard) to 100 (easy)
     const score = normalizeScore(readingEase, 0, 100, false); // Direct mapping, higher ease = higher score
     const interpretation = getThresholdCategory(readingEase, CONFIG.THRESHOLDS.fleschReadingEase) === 'low' ? 'human' : (getThresholdCategory(readingEase, CONFIG.THRESHOLDS.fleschReadingEase) === 'high' ? 'ai' : 'neutral');
@@ -623,7 +629,7 @@ function calculateFleschReadingEase(totalWords, totalSentences, totalSyllables) 
  * Calculates Gunning Fog Index.
  * Estimates years of formal education needed to understand the text. Higher = harder.
  * Formula: 0.4 * [ (words / sentences) + 100 * (complex words / words) ]
- * Complex words = words with 3 or more syllables (excluding common suffixes like -es, -ed, -ing).
+ * Complex words = words with 3+ syllables. This heuristic assumes simpler text (lower index) is more AI-like.
  * @param {string[]} words Array of words (cleaned).
  * @param {string[]} sentences Array of sentences.
  * @param {Function} countSyllablesFunc Function to count syllables in a word.
@@ -631,7 +637,7 @@ function calculateFleschReadingEase(totalWords, totalSentences, totalSyllables) 
  */
 function calculateGunningFog(words, sentences, countSyllablesFunc) {
     const name = "Gunning Fog Index";
-    const description = "Readability score estimating education years needed. Higher scores (more complex) might lean slightly human.";
+    const description = "Readability score estimating education years needed. Lower scores (<~10, simpler text) might lean AI according to this rule; higher scores (>~15, complex) lean human."; // Updated description
     const totalWords = words.length;
     const totalSentences = sentences.length;
     if (totalWords === 0 || totalSentences === 0) {
@@ -660,9 +666,9 @@ function calculateGunningFog(words, sentences, countSyllablesFunc) {
     const percentComplexWords = (complexWords / totalWords) * 100;
     const fogIndex = 0.4 * (avgSentenceLen + percentComplexWords);
 
-    // Normalize score (Direct: Higher fog index -> higher AI score - though could be human academic)
+    // Normalize score (Inverted: Lower fog index (easier) -> higher AI score) - REVERSED FROM PREVIOUS VERSION
     // Range: 5 (easy) to 20 (very hard)
-    const score = normalizeScore(fogIndex, 5, 20, false); // Higher index = higher score (simpler assumption)
+    const score = normalizeScore(fogIndex, 5, 20, true); // Invert = true (Lower index = higher score)
     const interpretation = getThresholdCategory(fogIndex, CONFIG.THRESHOLDS.gunningFog) === 'low' ? 'ai' : (getThresholdCategory(fogIndex, CONFIG.THRESHOLDS.gunningFog) === 'high' ? 'human' : 'neutral');
 
 
@@ -721,7 +727,7 @@ function countSyllablesApprox(word) {
  */
 function calculateWordRepetition(words) {
     const name = "Word Repetition Score";
-    const description = "Measures frequency of the most repeated content words. High repetition can sometimes indicate AI.";
+    const description = "Measures frequency of the most repeated content words. High repetition (>~5% for top 5) can sometimes indicate AI.";
     if (!words || words.length < 10) { // Need some text
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -742,6 +748,8 @@ function calculateWordRepetition(words) {
     const topN = 5;
     let repetitionScore = 0;
     const totalWords = words.length;
+    if (totalWords === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' }; // Avoid division by zero
+
     for (let i = 0; i < Math.min(topN, sortedWords.length); i++) {
         repetitionScore += (sortedWords[i].count / totalWords); // Add relative frequency
     }
@@ -764,7 +772,7 @@ function calculateWordRepetition(words) {
  */
 function calculatePhraseRepetition(words, n) {
     const name = `${n}-Gram Phrase Repetition`;
-    const description = `Measures frequency of repeated ${n}-word sequences. High repetition can indicate AI.`;
+    const description = `Measures frequency of repeated ${n}-word sequences. High repetition (>~${(CONFIG.THRESHOLDS.phraseRepetitionScore?.high ?? 0.03)*100}%) can indicate AI.`;
     if (!words || words.length < n * 2) { // Need enough text for potential repetition
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -776,6 +784,7 @@ function calculatePhraseRepetition(words, n) {
     const freqMap = calculateFrequency(ngrams);
     let repetitionScore = 0;
     const totalNgrams = ngrams.length;
+    if (totalNgrams === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' }; // Avoid division by zero
 
     for (const [ngram, count] of freqMap.entries()) {
         if (count > 1) {
@@ -785,9 +794,11 @@ function calculatePhraseRepetition(words, n) {
     }
 
     // Normalize score (Direct: Higher repetition -> higher AI score)
-    // Example range: 0 to 0.05 (5% of ngrams are repeats)
-    const score = normalizeScore(repetitionScore, 0, 0.05, false);
-     const interpretation = getThresholdCategory(repetitionScore, CONFIG.THRESHOLDS.phraseRepetitionScore) === 'low' ? 'human' : (getThresholdCategory(repetitionScore, CONFIG.THRESHOLDS.phraseRepetitionScore) === 'high' ? 'ai' : 'neutral');
+    // WIDENED Range based on previous result: 0 to 0.20 (20% of ngrams are repeats)
+    const normMinPhraseRep = 0;
+    const normMaxPhraseRep = 0.20; // Adjusted Max
+    const score = normalizeScore(repetitionScore, normMinPhraseRep, normMaxPhraseRep, false);
+    const interpretation = getThresholdCategory(repetitionScore, CONFIG.THRESHOLDS.phraseRepetitionScore) === 'low' ? 'human' : (getThresholdCategory(repetitionScore, CONFIG.THRESHOLDS.phraseRepetitionScore) === 'high' ? 'ai' : 'neutral');
 
 
     return { value: parseFloat(repetitionScore.toFixed(4)), name, description, score, interpretation };
@@ -803,7 +814,7 @@ function calculatePhraseRepetition(words, n) {
  */
 function calculatePassiveVoiceRatio(sentences) {
     const name = "Passive Voice Ratio (Approx.)";
-    const description = "Estimated ratio of sentences using passive voice (e.g., 'was taken'). High usage might sometimes correlate with formal AI text. Detection is approximate.";
+    const description = "Estimated ratio of sentences using passive voice (e.g., 'was taken'). High usage (>~15%) might sometimes correlate with formal AI text. Detection is approximate.";
     const totalSentences = sentences.length;
     if (totalSentences === 0) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
@@ -818,10 +829,13 @@ function calculatePassiveVoiceRatio(sentences) {
 
     let passiveCount = 0;
     for (const sentence of sentences) {
+        // Check for standard passive first (more reliable)
         if (passiveRegex.test(sentence)) {
+             // Add extra check: avoid cases like "I am excited" (adjective) vs "The book was excited" (unlikely passive)
+             // This is too complex for simple regex; accept potential false positives.
             passiveCount++;
         } else {
-             // Check for irregulars separately (less reliable)
+             // Check for irregulars separately if standard form not found (less reliable)
              const match = sentence.match(beVerbRegex);
              if (match) {
                  const followingText = sentence.substring(match.index + match[0].length);
@@ -882,13 +896,13 @@ function calculateWordCategoryRatio(words, categoryList, categoryName, descripti
 
 /**
  * Calculates ratio of contractions ('ll, 're, n't, etc.).
- * AI text, especially formal, might use fewer contractions.
+ * AI text, especially formal, might use fewer contractions. Higher ratio leans human.
  * @param {string} originalText The original, uncleaned text.
  * @returns {object} Heuristic result object.
  */
 function calculateContractionRatio(originalText, totalWords) {
     const name = "Contraction Ratio";
-    const description = "Ratio of contractions (e.g., 'don't', 'it's') to total words. Higher usage is more common in informal human writing.";
+    const description = "Ratio of contractions (e.g., 'don't', 'it's') to total words. Higher usage (>~2%) is more common in informal human writing.";
     if (!originalText || totalWords === 0) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -922,7 +936,7 @@ function calculateContractionRatio(originalText, totalWords) {
  */
 function calculateSentenceStartDiversity(sentences) {
      const name = "Sentence Start Diversity";
-     const description = "Measures the variety of words used to begin sentences. Less diversity might indicate simpler structures.";
+     const description = "Measures the variety of words used to begin sentences. Less diversity (<~10% unique starters) might indicate simpler structures (AI leaning).";
      if (!sentences || sentences.length < 5) {
          return { value: 0, name, description, score: 50, interpretation: 'neutral' };
      }
@@ -936,60 +950,60 @@ function calculateSentenceStartDiversity(sentences) {
      // Normalize (Inverted: Higher diversity -> lower AI score)
      // Range: 0.1 (low diversity) to 0.8 (high diversity)
      const score = normalizeScore(diversityRatio, 0.1, 0.8, true);
-     const interpretation = 'neutral'; // Hard to set reliable thresholds
+     const interpretation = diversityRatio < 0.1 ? 'ai' : (diversityRatio > 0.8 ? 'human' : 'neutral'); // Basic interpretation
 
      return { value: parseFloat(diversityRatio.toFixed(3)), name, description, score, interpretation };
 }
 
 /**
- * Placeholder: Calculates ratio of questions.
+ * Placeholder: Calculates ratio of questions. Higher ratio leans human.
  * @param {string[]} sentences Array of sentences.
  * @returns {object} Heuristic result object.
  */
 function calculateQuestionRatio(sentences) {
     const name = "Question Mark Ratio";
-    const description = "Ratio of sentences ending with a question mark.";
+    const description = "Ratio of sentences ending with a question mark. Higher ratio leans human.";
      const totalSentences = sentences.length;
      if (totalSentences === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' };
      const questionCount = sentences.filter(s => s.trim().endsWith('?')).length;
      const ratio = questionCount / totalSentences;
      // Normalize (Inverted: More questions -> lower AI score)
      const score = normalizeScore(ratio, 0, 0.1, true);
-     return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: 'neutral' };
+     return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: ratio > 0.01 ? 'human' : 'neutral' }; // If >1% are questions, lean human
 }
 
 /**
- * Placeholder: Calculates ratio of exclamations.
+ * Placeholder: Calculates ratio of exclamations. Higher ratio leans human.
  * @param {string[]} sentences Array of sentences.
  * @returns {object} Heuristic result object.
  */
 function calculateExclamationRatio(sentences) {
      const name = "Exclamation Mark Ratio";
-     const description = "Ratio of sentences ending with an exclamation mark.";
+     const description = "Ratio of sentences ending with an exclamation mark. Higher ratio leans human.";
      const totalSentences = sentences.length;
      if (totalSentences === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' };
      const exclamationCount = sentences.filter(s => s.trim().endsWith('!')).length;
      const ratio = exclamationCount / totalSentences;
       // Normalize (Inverted: More exclamations -> lower AI score)
      const score = normalizeScore(ratio, 0, 0.1, true);
-     return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: 'neutral' };
+     return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: ratio > 0.01 ? 'human' : 'neutral' }; // If >1% are exclamations, lean human
 }
 
 /**
- * Placeholder: Calculates ratio of declarative sentences (approx).
+ * Placeholder: Calculates ratio of declarative sentences (approx). Higher ratio might lean AI.
  * @param {string[]} sentences Array of sentences.
  * @returns {object} Heuristic result object.
  */
 function calculateDeclarativeRatio(sentences) {
      const name = "Declarative Sentence Ratio (Approx.)";
-     const description = "Ratio of sentences likely ending with a period (declarative).";
+     const description = "Ratio of sentences likely ending with a period (declarative). Very high ratio (~100%) might lean AI.";
      const totalSentences = sentences.length;
      if (totalSentences === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' };
      const declarativeCount = sentences.filter(s => s.trim().endsWith('.') && !s.trim().endsWith('..')).length; // Simple check for period
      const ratio = declarativeCount / totalSentences;
      // Normalize (Direct: More declarative might lean AI slightly)
      const score = normalizeScore(ratio, 0.5, 1.0, false);
-     return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: 'neutral' };
+     return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: ratio > 0.98 ? 'ai' : 'neutral' }; // If >98% are declarative, lean AI
 }
 
 
@@ -1003,7 +1017,7 @@ function calculateDeclarativeRatio(sentences) {
  */
 function calculateSimplifiedPerplexityProxy(words) {
     const name = "Predictability Proxy (Simplified)";
-    const description = "Crude measure of text predictability based on internal word pair frequencies. NOT true perplexity. Lower predictability (more surprising pairs) may indicate human.";
+    const description = "Crude measure of text predictability based on internal word pair frequencies. NOT true perplexity. Lower predictability (more surprising pairs, more negative log prob) may indicate human.";
     if (!words || words.length < 10) {
         return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     }
@@ -1011,6 +1025,7 @@ function calculateSimplifiedPerplexityProxy(words) {
     const bigrams = generateNgrams(words, 2);
     const bigramFreq = calculateFrequency(bigrams);
     const totalWords = words.length;
+    if (totalWords === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' };
 
     let totalLogProbability = 0;
     let sequenceCount = 0;
@@ -1046,7 +1061,7 @@ function calculateSimplifiedPerplexityProxy(words) {
     // Score is higher when avgLogProb is closer to 0 (more predictable)
     const score = normalizeScore(avgLogProb, -15, -5, false); // Direct: closer to 0 = higher score
 
-    return { value: parseFloat(avgLogProb.toFixed(3)), name, description, score, interpretation: 'neutral' };
+    return { value: parseFloat(avgLogProb.toFixed(3)), name, description, score, interpretation: 'neutral' }; // Interpretation is difficult here
 }
 
 
@@ -1054,7 +1069,7 @@ function calculateSimplifiedPerplexityProxy(words) {
 
 function calculateNominalizationRatio(words) {
     const name = "Nominalization Ratio (Approx.)";
-    const description = "Ratio of words potentially ending in nominalizing suffixes (e.g., -tion, -ment). Higher usage can occur in formal/abstract text, sometimes AI.";
+    const description = "Ratio of words potentially ending in nominalizing suffixes (e.g., -tion, -ment). Higher usage (>~10%) can occur in formal/abstract text, sometimes AI.";
      if (!words || words.length === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' };
     let nominalizationCount = 0;
     const suffixRegex = new RegExp(`(${CONFIG.NOMINALIZATION_SUFFIXES.join('|')})$`, 'i');
@@ -1065,17 +1080,18 @@ function calculateNominalizationRatio(words) {
     }
     const ratio = words.length > 0 ? nominalizationCount / words.length : 0;
     const score = normalizeScore(ratio, 0, 0.1, false); // Higher ratio = higher score
-    return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: 'neutral' };
+    return { value: parseFloat(ratio.toFixed(4)), name, description, score, interpretation: ratio > 0.1 ? 'ai' : 'neutral' };
 }
 
 function calculateListUsageScore(paragraphs) {
     const name = "List Usage Score";
-    const description = "Detects presence of simple bulleted or numbered lists. Potentially more human.";
+    const description = "Detects presence of simple bulleted or numbered lists (using double newline split paragraphs). Presence leans human.";
      if (!paragraphs || paragraphs.length === 0) return { value: 0, name, description, score: 50, interpretation: 'neutral' };
      let listCount = 0;
      const listRegex = /^\s*([*•-])\s+|^\s*(\d+\.)\s+/; // Simple check for lines starting with bullet/number
      for(const p of paragraphs){
-         if(listRegex.test(p)){
+         // Check start of paragraph for list marker
+         if(listRegex.test(p.split(/[\r\n]/)[0])) { // Check only the first line of the paragraph block
              listCount++;
          }
      }
@@ -1110,20 +1126,20 @@ function complexAnalysisWrapper(data) {
 
     let subScores = [];
     // Call existing functions, perhaps with slight variations
-    if (words.length > 10) {
+    if (words && words.length > 10) {
         subScores.push(calculateTTR(words).score);
         subScores.push(calculateAvgWordLength(words).score);
         subScores.push(calculateWordRepetition(words).score);
         subScores.push(calculatePhraseRepetition(words, 2).score); // Bigrams
          subScores.push(calculatePhraseRepetition(words, 3).score); // Trigrams
     }
-    if (sentences.length > 1) {
+    if (sentences && sentences.length > 1) {
         subScores.push(calculateAvgSentenceLength(sentences, words.length).score);
         subScores.push(calculateSentenceLengthVariance(sentences).score);
         subScores.push(calculatePassiveVoiceRatio(sentences).score); // Approx passive voice
         subScores.push(calculateSentenceStartDiversity(sentences).score);
     }
-     if (paragraphs.length > 1) {
+     if (paragraphs && paragraphs.length > 1) {
         subScores.push(calculateParagraphLengthVariance(paragraphs).score);
      }
 
@@ -1236,16 +1252,16 @@ async function analyzeText(text) {
     const startTime = performance.now();
 
     // --- 1. Preprocessing ---
-    const cleanedBasic = cleanTextBasic(text); // For sentence/paragraph splitting
-    const words = getWords(cleanedBasic); // Lowercase, no punctuation
+    const cleanedBasic = cleanTextBasic(text); // Basic cleaning, keeps structure for splitting
+    const words = getWords(text); // Use original text for word getter which does aggressive cleaning
     const sentences = splitSentences(cleanedBasic);
-    const paragraphs = splitParagraphs(cleanedBasic); // Use original text for paragraph structure
+    const paragraphs = splitParagraphs(text); // Use original text for paragraph splitting
 
     const wordCount = words.length;
     const sentenceCount = sentences.length;
-    const paragraphCount = paragraphs.length;
+    const paragraphCount = paragraphs.length; // Based on new splitting logic
 
-    console.log(`Preprocessing done: ${wordCount} words, ${sentenceCount} sentences, ${paragraphCount} paragraphs.`);
+    console.log(`Preprocessing done: ${wordCount} words, ${sentenceCount} sentences, ${paragraphCount} paragraphs (using double newline split).`);
 
     if (wordCount < CONFIG.MIN_WORDS_FOR_MEANINGFUL_ANALYSIS) {
         console.warn("Text too short for meaningful analysis.");
@@ -1264,12 +1280,28 @@ async function analyzeText(text) {
     const results = [];
     let weightedScoreSum = 0;
     let totalWeightApplied = 0;
+    let paragraphAnalysisSkipped = false; // Flag if paragraph sanity check fails
 
     // Wrap heuristic calls in try/catch to prevent one error from stopping everything
     function runHeuristic(calculationFunc, ...args) {
+        // Skip paragraph heuristics if flag is set
+        const name = calculationFunc.name || '';
+        if (paragraphAnalysisSkipped && (name.includes('ParagraphLengthVariance') || name.includes('calculateAvgParagraphLength'))) {
+            console.warn(`Skipping ${name} due to failed paragraph splitting sanity check.`);
+            // Add a placeholder result indicating skipped analysis?
+             results.push({
+                 value: NaN, // Indicate invalid calculation
+                 name: name.replace('calculate', ''), // Clean up name
+                 description: "Skipped due to suspected paragraph splitting failure.",
+                 score: 50, // Neutral score
+                 interpretation: 'neutral'
+             });
+            return; // Don't run the calculation or apply weight
+        }
+
         try {
             const result = calculationFunc(...args);
-            if (result && typeof result.value === 'number' && result.name && typeof result.score === 'number') {
+            if (result && typeof result.value === 'number' && !isNaN(result.value) && result.name && typeof result.score === 'number') {
                 results.push(result);
                 // Apply weighting if weight exists for this heuristic name (match keys in CONFIG.WEIGHTS)
                  const weightKey = Object.keys(CONFIG.WEIGHTS).find(key => result.name.toLowerCase().includes(key.toLowerCase()));
@@ -1281,16 +1313,30 @@ async function analyzeText(text) {
                      totalWeightApplied += Math.abs(weight); // Use absolute weight for normalization factor
                      // console.log(`Heuristic: ${result.name}, Score: ${result.score}, Centered: ${centeredScore}, Weight: ${weight}, Contribution: ${centeredScore * weight}`);
                  } else {
-                    // console.warn(`No weight found for heuristic: ${result.name}`);
+                     // console.warn(`No weight found for heuristic: ${result.name}`);
                  }
 
-            } else {
-                console.warn(`Invalid result from heuristic: ${calculationFunc.name || 'anonymous function'}`);
+            } else if(result && result.name && isNaN(result.value)) {
+                 // Handle cases where we intentionally returned NaN (like skipped paragraph analysis)
+                 // Already pushed placeholder above, so just log maybe
+                 console.log(`Heuristic ${result.name} result value is NaN (likely skipped).`);
+            }
+            else {
+                console.warn(`Invalid result object from heuristic: ${calculationFunc.name || 'anonymous function'}`);
             }
         } catch (error) {
             console.error(`Error running heuristic ${calculationFunc.name || 'anonymous function'}:`, error);
         }
     }
+
+    // --- Sanity Check Paragraphs BEFORE calculating paragraph-dependent heuristics ---
+    let avgParagraphLen = paragraphs.length > 0 ? wordCount / paragraphs.length : 0;
+    if (avgParagraphLen > CONFIG.PARAGRAPH_LENGTH_SANITY_CHECK && paragraphs.length <= 5) { // Check if avg length is absurd AND few paras detected
+        console.warn(`Average paragraph length (${avgParagraphLen.toFixed(0)}) exceeds sanity check (${CONFIG.PARAGRAPH_LENGTH_SANITY_CHECK}) with only ${paragraphs.length} paragraphs detected. Paragraph splitting likely failed based on double newlines. Skipping paragraph-based heuristics.`);
+        paragraphAnalysisSkipped = true;
+        // Add a note to the results directly? Or handle in UI display
+    }
+
 
     // --- Execute all heuristic calculations ---
     console.log("Calculating heuristics...");
@@ -1304,14 +1350,14 @@ async function analyzeText(text) {
     // Sentence Structure & Variety
     runHeuristic(calculateAvgSentenceLength, sentences, wordCount);
     runHeuristic(calculateSentenceLengthVariance, sentences);
-    runHeuristic(calculateParagraphLengthVariance, paragraphs); // Pass original paragraphs
+    runHeuristic(calculateParagraphLengthVariance, paragraphs); // Will be skipped if sanity check failed
     runHeuristic(calculateDeclarativeRatio, sentences); // Approx
     runHeuristic(calculateQuestionRatio, sentences);
     runHeuristic(calculateExclamationRatio, sentences);
 
     // Repetitiveness
     runHeuristic(calculateWordRepetition, words);
-    runHeuristic(calculatePhraseRepetition, words, 2); // Bigrams
+    runHeuristic(calculatePhraseRepetition, words, 2); // Bigrams - Adjusted Norm Range
     runHeuristic(calculatePhraseRepetition, words, 3); // Trigrams
     runHeuristic(calculateSentenceStartDiversity, sentences);
 
@@ -1330,15 +1376,17 @@ async function analyzeText(text) {
      runHeuristic(calculateSimplifiedPerplexityProxy, words); // Very Crude Proxy
 
     // Formatting & Structure
-    const avgParagraphLen = paragraphs.length > 0 ? wordCount / paragraphs.length : 0;
+    const avgParaLenNormMin = 30;
+    const avgParaLenNormMax = 250; // Adjusted range
     runHeuristic(() => ({ // Wrap simple calc in function for runHeuristic
-        value: parseFloat(avgParagraphLen.toFixed(1)),
+        value: parseFloat(avgParagraphLen.toFixed(1)), // Use potentially adjusted value if sanity check applied, though skipping is better
         name: "Average Paragraph Length",
-        description: "Average number of words per paragraph.",
-        score: normalizeScore(avgParagraphLen, 20, 150, false), // Example normalization
+        description: `Average words per paragraph (split by double newlines). Sanity Check Max: ${CONFIG.PARAGRAPH_LENGTH_SANITY_CHECK}. Normalization Range: ${avgParaLenNormMin}-${avgParaLenNormMax}. Value outside this range or skipping indicates potential issues.`,
+        score: normalizeScore(avgParagraphLen, avgParaLenNormMin, avgParaLenNormMax, false), // Recalculate score based on potentially adjusted avgParagraphLen or use 50 if skipped? runHeuristic handles skipping now.
         interpretation: 'neutral'
-    }));
-    runHeuristic(calculateListUsageScore, paragraphs);
+    }), /* No Args needed here */ ); // Will be skipped if sanity check failed
+
+    runHeuristic(calculateListUsageScore, paragraphs); // Uses paragraph structure
     runHeuristic(calculateQuoteUsageScore, text); // Pass original text
 
     // --- Add calls to placeholder/complex functions if desired ---
@@ -1352,16 +1400,24 @@ async function analyzeText(text) {
     let finalScore = 50; // Default to neutral
     if (totalWeightApplied > 0) {
         // Scale the weighted sum based on the total weight applied to bring it back towards a -50 to +50 range roughly
+        // Note: If paragraph heuristics were skipped, totalWeightApplied will be lower, naturally reducing their impact.
         const scaledScore = (weightedScoreSum / totalWeightApplied) * 50; // Multiply by 50 to scale impact
         finalScore = 50 + scaledScore; // Center around 50
-        console.log(`Weighted Sum: ${weightedScoreSum.toFixed(2)}, Total Weight: ${totalWeightApplied.toFixed(2)}, Scaled Score Adj: ${scaledScore.toFixed(2)}`);
-    } else {
-        console.warn("Total weight applied was zero. Using average of individual scores.");
-        // Fallback: Average the normalized scores if weights failed
-         if (results.length > 0) {
-            const avgScore = results.reduce((sum, r) => sum + r.score, 0) / results.length;
+        console.log(`Weighted Sum: ${weightedScoreSum.toFixed(2)}, Total Weight Applied: ${totalWeightApplied.toFixed(2)}, Scaled Score Adj: ${scaledScore.toFixed(2)}`);
+    } else if (results.length > 0) { // Ensure results array is not empty
+        console.warn("Total weight applied was zero. Using average of individual scores as fallback.");
+        // Fallback: Average the normalized scores if weights failed or no weighted heuristics ran
+        const validScores = results.filter(r => typeof r.score === 'number' && !isNaN(r.score));
+         if (validScores.length > 0) {
+            const avgScore = validScores.reduce((sum, r) => sum + r.score, 0) / validScores.length;
             finalScore = avgScore;
+         } else {
+             console.warn("No valid scores found to average. Defaulting to 50.");
+             finalScore = 50;
          }
+    } else {
+         console.warn("No results generated and no weight applied. Defaulting score to 50.");
+         finalScore = 50;
     }
 
      // Add small random factor for slight variability
@@ -1381,8 +1437,9 @@ async function analyzeText(text) {
         overallScore: finalScore,
         wordCount: wordCount,
         sentenceCount: sentenceCount,
-        paragraphCount: paragraphCount,
+        paragraphCount: paragraphCount, // Reflects count based on double newlines
         analysisTime: (endTime - startTime) / 1000,
+        paragraphAnalysisSkipped: paragraphAnalysisSkipped // Include flag in results
          // Add any other summary data needed
     };
 }
@@ -1404,12 +1461,12 @@ function updateTextCounts() {
     const text = DOMElements.textInput.value;
     const words = text.match(/\b\w+\b/g) || []; // Simple word count based on word boundaries
     const sentences = splitSentences(text); // Use sentence splitter
-    const paragraphs = splitParagraphs(text); // Use paragraph splitter
+    const paragraphs = splitParagraphs(text); // Use paragraph splitter (double newline logic)
 
     DOMElements.charCountDisplay.textContent = `Characters: ${text.length}`;
     DOMElements.wordCountDisplay.textContent = `Words: ${words.length}`;
     DOMElements.sentenceCountDisplay.textContent = `Sentences: ${sentences.length}`;
-    DOMElements.paragraphCountDisplay.textContent = `Paragraphs: ${paragraphs.length}`;
+    DOMElements.paragraphCountDisplay.textContent = `Paragraphs: ${paragraphs.length}`; // Reflects new logic count
 }
 
 
@@ -1474,11 +1531,17 @@ function displayResults(analysisData) {
     // --- Display Confidence ---
     // Confidence is also heuristic. Lower for scores near 50%, higher for scores near 0/100.
     // Also factor in word count (less confident for shorter texts).
+    // Reduce confidence if paragraph analysis was skipped
     const distanceFromMid = Math.abs(overallScore - 50); // 0 to 50
     let confidenceLevel = 'Low';
     let confidencePercent = 0;
+    let confidenceNote = '';
 
-    if (analysisData.wordCount < 150) {
+    if (analysisData.paragraphAnalysisSkipped) {
+        confidencePercent = Math.max(0, distanceFromMid * 0.5 - 15); // Significantly reduce confidence
+        confidenceLevel = 'Very Low';
+        confidenceNote = ' (Paragraph analysis skipped due to formatting issues)';
+    } else if (analysisData.wordCount < 150) {
         confidencePercent = Math.max(0, distanceFromMid * 1.0 - 10); // Lower confidence for short text
         confidenceLevel = 'Very Low';
     } else if (analysisData.wordCount < 500) {
@@ -1489,8 +1552,8 @@ function displayResults(analysisData) {
         confidenceLevel = 'Medium';
     }
 
-    // Boost confidence slightly if score is very high/low
-    if(distanceFromMid > 40) { // Score > 90 or < 10
+    // Boost confidence slightly if score is very high/low (unless paragraphs skipped)
+    if(distanceFromMid > 40 && !analysisData.paragraphAnalysisSkipped) { // Score > 90 or < 10
         confidencePercent += 10;
         confidenceLevel = (confidenceLevel === 'Medium') ? 'High' : confidenceLevel; // Upgrade to High if possible
     }
@@ -1498,7 +1561,8 @@ function displayResults(analysisData) {
     confidencePercent = Math.min(100, Math.max(0, confidencePercent)); // Clamp 0-100
 
     DOMElements.confidenceBar.style.width = `${confidencePercent}%`;
-    DOMElements.confidenceLabel.textContent = `Confidence: ${confidenceLevel} (${confidencePercent.toFixed(0)}%)`;
+    DOMElements.confidenceLabel.textContent = `Confidence: ${confidenceLevel} (${confidencePercent.toFixed(0)}%)${confidenceNote}`;
+
 
     // Set bar color based on confidence level
     let confidenceClass = 'low';
@@ -1515,6 +1579,10 @@ function displayResults(analysisData) {
          interpretationText += `This suggests the text aligns more closely with typical human writing patterns according to the heuristics (e.g., potentially higher variance, use of personal language, lower predictability proxy). `;
      } else {
          interpretationText += `The heuristics produced mixed signals, making it difficult to strongly lean towards either AI or human origin based solely on these rules. `;
+     }
+     // Add note if paragraph analysis failed
+     if(analysisData.paragraphAnalysisSkipped){
+        interpretationText += `<strong>Note: Paragraph analysis was skipped due to formatting issues in the input text (likely missing double newlines between paragraphs), which may affect the overall score reliability.</strong> `;
      }
      interpretationText += `<strong>Remember: This is a heuristic analysis and not definitive. Review the detailed breakdown and the FAQ section.</strong>`;
      DOMElements.overallInterpretation.innerHTML = interpretationText; // Use innerHTML for strong tag
@@ -1541,18 +1609,26 @@ function displayResults(analysisData) {
         // Add potential low/medium/high class based on thresholds if defined
          if(result.interpretation && result.interpretation !== 'neutral') {
              // Simple mapping for demo: ai leaning = high value, human leaning = low value
+             // This logic might need refinement based on specific heuristic meanings
              valueSpan.classList.add(result.interpretation === 'ai' ? 'high' : 'low');
          }
-        // Check if value is a number before calling toFixed
-        valueSpan.textContent = typeof result.value === 'number' ? result.value.toFixed(3) : String(result.value); // Display value, format number
+        // Check if value is a number before calling toFixed, handle NaN for skipped results
+        valueSpan.textContent = typeof result.value === 'number' && !isNaN(result.value)
+            ? result.value.toFixed(3)
+            : (isNaN(result.value) ? "N/A (Skipped)" : String(result.value)); // Display value, format number, handle NaN
         itemDiv.appendChild(valueSpan);
 
 
         const scoreSpan = document.createElement('span');
         scoreSpan.className = 'heuristic-score';
-         const scoreLevel = result.score > 66 ? 'high' : (result.score < 33 ? 'low' : 'medium');
-         scoreSpan.setAttribute('data-score-level', scoreLevel); // For CSS styling
-        scoreSpan.textContent = `AI Score: ${result.score.toFixed(0)}/100`;
+        if (typeof result.score === 'number' && !isNaN(result.score)) {
+             const scoreLevel = result.score > 66 ? 'high' : (result.score < 33 ? 'low' : 'medium');
+             scoreSpan.setAttribute('data-score-level', scoreLevel); // For CSS styling
+            scoreSpan.textContent = `AI Score: ${result.score.toFixed(0)}/100`;
+        } else {
+             scoreSpan.textContent = `AI Score: N/A`;
+        }
+
         itemDiv.appendChild(scoreSpan);
 
 
@@ -1632,12 +1708,16 @@ function clearInputAndResults() {
          DOMElements.overallScoreLabel.className = 'score-label';
      }
       if(DOMElements.overallInterpretation) {
-          // Reset interpretation text more reliably
-          DOMElements.overallInterpretation.innerHTML = 'Analysis results will appear here after you submit text. <br> The analysis checks for various linguistic patterns including: <ul class="feature-list"><li>Vocabulary Richness (Type-Token Ratio)</li><li>Sentence Length Variability</li><li>Repetitiveness (Words, Phrases)</li><li>Use of Transition Words</li><li>Presence of Personal Pronouns</li><li>Readability Scores</li><li>Use of Passive Voice</li><li>And many other subtle heuristic markers...</li></ul>';
-      }
+          // Reset interpretation text more reliably (copy from HTML structure for default)
+           DOMElements.overallInterpretation.textContent = 'Analysis results will appear here...'; // Simpler reset
+       }
      if(DOMElements.confidenceBar) DOMElements.confidenceBar.style.width = '0%';
      if(DOMElements.confidenceLabel) DOMElements.confidenceLabel.textContent = 'Confidence: Low';
      if(DOMElements.confidenceBar) DOMElements.confidenceBar.className = 'confidence-bar'; // Reset class
+     if(DOMElements.resultsPlaceholder){
+           // Restore original placeholder content if needed
+           DOMElements.resultsPlaceholder.innerHTML = '<p>Analysis results will appear here after you submit text.</p><p>The analysis checks for various linguistic patterns including:</p><ul class="feature-list"><li>Vocabulary Richness (TTR)</li><li>Sentence Length Variability</li><li>Repetitiveness (Words, Phrases)</li><li>Use of Transition Words</li><li>Presence of Personal Pronouns</li><li>Readability Scores</li><li>Use of Passive Voice</li><li>And many other subtle heuristic markers...</li></ul>';
+       }
 
 
     console.log("Input cleared and results reset.");
@@ -1652,6 +1732,7 @@ function clearInputAndResults() {
  * Handles the click event for the Analyze button.
  */
 async function handleAnalyzeClick() {
+    console.log("Analyze button clicked."); // Added simple log here
     // Added check for DOMElements.textInput
     if (!DOMElements.textInput) {
         console.error("handleAnalyzeClick: textInput element not found.");
