@@ -1,0 +1,99 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 20px;
+    background-color: #f4f4f4;
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+}
+
+.important-note {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.container {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    max-width: 800px;
+    margin: 20px auto; /* Center the container */
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+
+textarea {
+    width: 98%; /* Slightly less than 100% to prevent overflow issues */
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1rem;
+    min-height: 300px; /* Ensure decent height */
+    resize: vertical; /* Allow vertical resizing */
+}
+
+.controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+button {
+    background-color: #007bff;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s ease;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+#wordCount {
+    font-style: italic;
+    color: #555;
+}
+
+#resultArea {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #e9ecef;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+#resultArea h2 {
+    margin-top: 0;
+    color: #333;
+    font-size: 1.2em;
+}
+
+#detectionResult {
+    font-size: 1rem;
+    color: #495057;
+}
+
+/* Style for placeholder "detection" results */
+.result-human { color: green; font-weight: bold; }
+.result-ai { color: orange; font-weight: bold; }
+.result-error { color: red; font-weight: bold; }
+.result-info { color: #333; }
